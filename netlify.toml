@@ -1,0 +1,10 @@
+# SPA Redirects for Client-Side Routing
+[[redirects]]
+  from = "/*"
+  to = "/pages/index.html"
+  status = 200
+
+# Build settings (no build process needed)
+[build]
+  publish = "."
+  command = "# Pure vanilla JS - no build required"
