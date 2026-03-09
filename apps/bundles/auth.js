@@ -32,8 +32,54 @@ export class Auth {
    * Initialize Firebase Auth
    */
   initializeFirebase() {
-    // Firebase initialization would go here
-    // Placeholder for Firebase SDK integration
+    if (!window.firebase) {
+      console.error('Firebase SDK not loaded - ensure win-dec.js loads before main.js');
+      return;
+    }
+
+    // Get Firebase instances from win-dec.js
+    this.firebaseApp = window.firebase.app;
+    this.firebaseAuth = window.firebase.auth;
+    this.firestore = window.firebase.firestore;
+    this.storage = window.firebase.storage;
+
+    // Set persistence to LOCAL to prevent auto-logout from storage events
+    if (window.firebase.setPersistence && window.firebase.browserLocalPersistence) {
+      window.firebase.setPersistence(this.firebaseAuth, window.firebase.browserLocalPersistence)
+        .then(() => {
+          console.log('[Auth.initializeFirebase] persistence set to LOCAL');
+        })
+        .catch((error) => {
+          console.warn('[Auth.initializeFirebase] failed to set persistence (non-critical)', error);
+        });
+    }
+
+    // Set up auth state listener
+    window.firebase.onAuthStateChanged(this.firebaseAuth, (firebaseUser) => {
+      const timestamp = new Date().toISOString();
+      console.log('[Auth.onAuthStateChanged] callback triggered', { 
+        hasUser: !!firebaseUser, 
+        uid: firebaseUser?.uid,
+        timestamp,
+        wasAuthenticated: this.isAuthenticated,
+        transition: this.isAuthenticated ? (firebaseUser ? 'staying-logged-in' : 'LOGGING-OUT') : (firebaseUser ? 'LOGGING-IN' : 'staying-logged-out')
+      });
+      if (firebaseUser) {
+        this.user = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName || '',
+          photoURL: firebaseUser.photoURL || ''
+        };
+        this.isAuthenticated = true;
+        this.saveUserSession();
+      } else {
+        this.user = null;
+        this.isAuthenticated = false;
+        localStorage.removeItem('user_session');
+      }
+    });
+
     console.log('Firebase Auth initialized');
   }
 
@@ -52,21 +98,24 @@ export class Auth {
    */
   async login(email, password) {
     try {
-      switch (this.authType) {
-        case 'firebase':
-          // Firebase login
-          this.user = { email, id: Math.random() }; // Placeholder
-          break;
-        case 'custom':
-          // Custom login
-          this.user = { email, id: Math.random() }; // Placeholder
-          break;
+      if (this.authType === 'firebase') {
+        const cred = await window.firebase.signInWithEmailAndPassword(this.firebaseAuth, email, password);
+        const u = cred.user;
+        this.user = {
+          id: u.uid,
+          email: u.email,
+          displayName: u.displayName || '',
+          photoURL: u.photoURL || ''
+        };
+        this.isAuthenticated = true;
+        this.saveUserSession();
+        return { success: true, user: this.user };
       }
-      this.isAuthenticated = true;
-      this.saveUserSession();
-      return { success: true, user: this.user };
+
+      return { success: false, error: 'Unsupported auth type' };
     } catch (error) {
-      return { success: false, error: error.message };
+      console.error('Login error:', error);
+      return { success: false, error: this.mapFirebaseError(error.code) || error.message };
     }
   }
 
@@ -75,11 +124,18 @@ export class Auth {
    */
   async logout() {
     try {
+      // Sign out from Firebase
+      if (this.authType === 'firebase' && this.firebaseAuth && window.firebase) {
+        await this.firebaseAuth.signOut();
+      }
+      
+      // Clear local state
       this.user = null;
       this.isAuthenticated = false;
       localStorage.removeItem('user_session');
       return { success: true };
     } catch (error) {
+      console.error('Logout error:', error);
       return { success: false, error: error.message };
     }
   }
@@ -90,22 +146,50 @@ export class Auth {
    */
   async register(userData) {
     try {
-      switch (this.authType) {
-        case 'firebase':
-          // Firebase registration
-          this.user = userData;
-          break;
-        case 'custom':
-          // Custom registration
-          this.user = userData;
-          break;
+      if (this.authType === 'firebase') {
+        const { username, universityRole, email, password, displayName } = userData;
+        const cred = await window.firebase.createUserWithEmailAndPassword(this.firebaseAuth, email, password);
+
+        // Update profile with display name
+        if (displayName && cred.user.updateProfile) {
+          await cred.user.updateProfile({ displayName });
+        }
+
+        this.user = {
+          id: cred.user.uid,
+          email: cred.user.email,
+          username: username || '',
+          universityRole: universityRole || '',
+          photoURL: cred.user.photoURL || ''
+        };
+        this.isAuthenticated = true;
+        this.saveUserSession();
+        return { success: true, user: this.user };
       }
-      this.isAuthenticated = true;
-      this.saveUserSession();
-      return { success: true, user: this.user };
+
+      return { success: false, error: 'Unsupported auth type' };
     } catch (error) {
-      return { success: false, error: error.message };
+      console.error('Registration error:', this.mapFirebaseError(error.code) || error.message);
+      return { success: false, error: this.mapFirebaseError(error.code) || error.message };
     }
+  }
+
+  /**
+   * Map Firebase Error Code
+   * @param {string} errorCode - Firebase error code
+   * @returns {string} User-friendly error message
+   */
+  mapFirebaseError(errorCode) {
+    const errorMap = {
+      'auth/user-not-found': 'Email not registered. Please sign up.',
+      'auth/wrong-password': 'Incorrect password. Please try again.',
+      'auth/email-already-in-use': 'Email already has an account.',
+      'auth/weak-password': 'Password must meet all strength criteria.',
+      'auth/invalid-email': 'Please enter a valid email.',
+      'auth/too-many-requests': 'Too many failed attempts. Try again later.',
+      'auth/network-request-failed': 'Connection failed. Check your internet.',
+    };
+    return errorMap[errorCode] || 'An error occurred. Please try again.';
   }
 
   /**
@@ -136,17 +220,33 @@ export class Auth {
    */
   loadUserSession() {
     const saved = localStorage.getItem('user_session');
-    if (saved) {
-      this.user = JSON.parse(saved);
-      this.isAuthenticated = true;
+    if (saved && !this.isAuthenticated) {
+      try {
+        this.user = JSON.parse(saved);
+      } catch {
+        localStorage.removeItem('user_session');
+      }
     }
   }
 
   /**
-   * Initialize DB access (for firebase/custom integration)
+   * Get Firestore instance
+   */
+  getFirestore() {
+    return this.firestore;
+  }
+
+  /**
+   * Get Storage instance
+   */
+  getStorage() {
+    return this.storage;
+  }
+
+  /**
+   * Get Firebase instance (for firebase-service.js compatibility)
    */
   getDatabase() {
-    // Return database instance configured based on authType
-    return null; // Placeholder
+    return window.firebase;
   }
 }

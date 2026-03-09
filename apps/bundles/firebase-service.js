@@ -7,7 +7,8 @@
 export class FirebaseService {
   constructor(auth) {
     this.auth = auth;
-    this.firestore = auth.getFirestore ? auth.getFirestore() : null;
+    this.db = null;
+    this.storage = null;
     this.initialized = false;
     this.initCheck();
   }
@@ -16,33 +17,62 @@ export class FirebaseService {
    * Check if Firebase is properly initialized
    */
   initCheck() {
-    if (this.firestore) {
+    if (window.firebase && window.firebase.firestore) {
+      this.db = window.firebase.firestore;
+      this.storage = window.firebase.storage;
       this.initialized = true;
+      console.log('FirebaseService initialized successfully');
+    } else {
+      console.error('Firebase not loaded - ensure win-dec.js loads before main.js');
     }
   }
 
   /**
-   * Add document to collection
-   * @param {string} collection - Collection name
+   * Add document to collection with auto-generated ID
+   * @param {string} collectionName - Collection name
    * @param {object} data - Document data
    */
-  async addDocument(collection, data) {
+  async addDocument(collectionName, data) {
     try {
       if (!this.initialized) {
-        console.error('Firebase not initialized');
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      const { collection: firestoreCollection, addDoc, serverTimestamp } = window.firebase.firestore;
-      const ref = firestoreCollection(this.firestore, collection);
-      const docRef = await addDoc(ref, {
+      const colRef = window.firebase.collection(this.db, collectionName);
+      const docRef = await window.firebase.addDoc(colRef, {
         ...data,
-        createdAt: serverTimestamp(),
-        userId: this.auth.getUser().id
+        createdAt: window.firebase.serverTimestamp(),
+        userId: this.auth.getUser()?.id
       });
       return { success: true, id: docRef.id };
     } catch (error) {
       console.error('Error adding document:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Set document to collection (create or overwrite)
+   * @param {string} collectionName - Collection name
+   * @param {string} docId - Document ID
+   * @param {object} data - Document data
+   * @param {boolean} merge - Whether to merge with existing document
+   */
+  async setDocument(collectionName, data, docId, merge = true) {
+    try {
+      if (!this.initialized) {
+        return { success: false, error: 'Firebase not initialized' };
+      }
+      
+      const docRef = window.firebase.doc(this.db, collectionName, docId);
+      await window.firebase.setDoc(docRef, {
+        ...data,
+        updatedAt: window.firebase.serverTimestamp()
+      }, { merge });
+      
+      return { success: true, id: docId };
+    } catch (error) {
+      console.error('Error setting document:', error);
       return { success: false, error: error.message };
     }
   }
@@ -58,9 +88,8 @@ export class FirebaseService {
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      const { collection: firestoreCollection, doc, getDoc } = window.firebase.firestore;
-      const docRef = doc(firestoreCollection(this.firestore, collection), docId);
-      const docSnap = await getDoc(docRef);
+      const docRef = window.firebase.doc(this.db, collection, docId);
+      const docSnap = await window.firebase.getDoc(docRef);
 
       if (docSnap.exists()) {
         return { success: true, data: { id: docSnap.id, ...docSnap.data() } };
@@ -86,27 +115,26 @@ export class FirebaseService {
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      const { collection: firestoreCollection, query, where, orderBy, getDocs, limit: firestoreLimit } = window.firebase.firestore;
-      let q = firestoreCollection(this.firestore, collection);
+      let q = window.firebase.collection(this.db, collection);
       let constraints = [];
 
       if (whereCondition) {
-        constraints.push(where(whereCondition.field, whereCondition.operator, whereCondition.value));
+        constraints.push(window.firebase.where(whereCondition.field, whereCondition.operator, whereCondition.value));
       }
 
       if (orderByCondition) {
-        constraints.push(orderBy(orderByCondition.field, orderByCondition.direction || 'asc'));
+        constraints.push(window.firebase.orderBy(orderByCondition.field, orderByCondition.direction || 'asc'));
       }
 
       if (limit) {
-        constraints.push(firestoreLimit(limit));
+        constraints.push(window.firebase.limit(limit));
       }
 
       if (constraints.length > 0) {
-        q = query(q, ...constraints);
+        q = window.firebase.query(q, ...constraints);
       }
 
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await window.firebase.getDocs(q);
       const documents = [];
       querySnapshot.forEach((doc) => {
         documents.push({ id: doc.id, ...doc.data() });
@@ -131,11 +159,10 @@ export class FirebaseService {
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      const { collection: firestoreCollection, doc, updateDoc, serverTimestamp } = window.firebase.firestore;
-      const docRef = doc(firestoreCollection(this.firestore, collection), docId);
-      await updateDoc(docRef, {
+      const docRef = window.firebase.doc(this.db, collection, docId);
+      await window.firebase.updateDoc(docRef, {
         ...data,
-        updatedAt: serverTimestamp()
+        updatedAt: window.firebase.serverTimestamp()
       });
       return { success: true };
     } catch (error) {
@@ -155,9 +182,8 @@ export class FirebaseService {
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      const { collection: firestoreCollection, doc, deleteDoc } = window.firebase.firestore;
-      const docRef = doc(firestoreCollection(this.firestore, collection), docId);
-      await deleteDoc(docRef);
+      const docRef = window.firebase.doc(this.db, collection, docId);
+      await window.firebase.deleteDoc(docRef);
       return { success: true };
     } catch (error) {
       console.error('Error deleting document:', error);
@@ -172,16 +198,13 @@ export class FirebaseService {
    */
   async uploadFile(path, file) {
     try {
-      if (!window.firebase.storage) {
+      if (!this.storage) {
         return { success: false, error: 'Storage not available' };
       }
 
-      const { ref, uploadBytes, getDownloadURL } = window.firebase.storage;
-      const storage = this.auth.getStorage();
-      const storageRef = ref(storage, path);
-
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const storageRef = window.firebase.ref(this.storage, path);
+      await window.firebase.uploadBytes(storageRef, file);
+      const url = await window.firebase.getDownloadURL(storageRef);
 
       return { success: true, url };
     } catch (error) {
@@ -196,15 +219,12 @@ export class FirebaseService {
    */
   async deleteFile(path) {
     try {
-      if (!window.firebase.storage) {
+      if (!this.storage) {
         return { success: false, error: 'Storage not available' };
       }
 
-      const { ref, deleteObject } = window.firebase.storage;
-      const storage = this.auth.getStorage();
-      const fileRef = ref(storage, path);
-
-      await deleteObject(fileRef);
+      const fileRef = window.firebase.ref(this.storage, path);
+      await window.firebase.deleteObject(fileRef);
       return { success: true };
     } catch (error) {
       console.error('Error deleting file:', error);
@@ -225,15 +245,14 @@ export class FirebaseService {
         return null;
       }
 
-      const { collection: firestoreCollection, query, where, onSnapshot } = window.firebase.firestore;
-      let q = firestoreCollection(this.firestore, collection);
+      let q = window.firebase.collection(this.db, collection);
 
       if (whereCondition) {
-        q = query(q, where(whereCondition.field, whereCondition.operator, whereCondition.value));
+        q = window.firebase.query(q, window.firebase.where(whereCondition.field, whereCondition.operator, whereCondition.value));
       }
 
       // Return unsubscribe function
-      return onSnapshot(q, (snapshot) => {
+      return window.firebase.onSnapshot(q, (snapshot) => {
         const documents = [];
         snapshot.forEach((doc) => {
           documents.push({ id: doc.id, ...doc.data() });

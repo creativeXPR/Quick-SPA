@@ -9,6 +9,7 @@ import { Router } from './bundles/router.js';
 import { Auth } from './bundles/auth.js';
 import { Utilities } from './bundles/utilities.js';
 import { Pages } from './bundles/pages.js';
+import { FirebaseService } from './bundles/firebase-service.js';
 
 export class App {
   constructor(config = appConfig) {
@@ -25,6 +26,11 @@ export class App {
     this.auth = new Auth(config);
     this.utilities = new Utilities(config);
     this.pages = new Pages(config);
+    this.firebaseService = new FirebaseService(this.auth);
+
+    // Global declarations for debugging and page access
+    window.firebaseService = this.firebaseService;
+    window.utilities = this.utilities
 
     // Restore user session if exists
     this.auth.loadUserSession();

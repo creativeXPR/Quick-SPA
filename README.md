@@ -41,6 +41,16 @@ SPA/
 - `serve.json` handles local routing: unmapped routes redirect to `pages/index.html`
 - `_redirects` and `netlify.toml` handle production routing on Netlify
 - SPA routing works both locally and in production!
+- For syntax highlighting of HTML string in js using vscode, consider installing the VSCode Comment Tag Extension. It can be found in the vscode-extension folder, right click it, then click on "Install Extension VSIX". Once done your code will be highlighted in a js string just by adding the comment /* html*/ in front of the string. To exemplify;
+
+```javascript
+return /* html */ `
+    <div class="info-card">
+        <div class="card-icon"><i class="fas ${icon}"></i></div>
+        <div class="card-mid">${title}</div>
+        <div class="card-desc">${desc}</div>
+    </div>
+`;
 
 ---
 

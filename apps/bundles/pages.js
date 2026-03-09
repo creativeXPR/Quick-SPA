@@ -19,14 +19,14 @@ export class Pages {
    */
   initializeTemplates() {
     return {
-      home: `
+      home: /*html*/ `
         <div class="page page-home">
           <h1>Welcome Home</h1>
           <p>This is the home page template</p>
           <a href="/dashboard" class="btn">Go to Dashboard</a>
         </div>
       `,
-      login: `
+      login: /*html*/ `
         <div class="page page-login">
           <div class="login-container">
             <h1>Login</h1>
@@ -39,7 +39,7 @@ export class Pages {
           </div>
         </div>
       `,
-      dashboard: `
+      dashboard: /*html*/ `
         <div class="page page-dashboard">
           <h1>Dashboard</h1>
           <p>Welcome to your dashboard</p>
@@ -49,7 +49,7 @@ export class Pages {
           <a href="/" class="btn">Back Home</a>
         </div>
       `,
-      profile: `
+      profile: /*html*/ `
         <div class="page page-profile">
           <h1>User Profile</h1>
           <div class="profile-container">
@@ -58,7 +58,7 @@ export class Pages {
           <a href="/dashboard" class="btn">Back to Dashboard</a>
         </div>
       `,
-      settings: `
+      settings: /*html*/ `
         <div class="page page-settings">
           <h1>Settings</h1>
           <div class="settings-container">
@@ -66,7 +66,7 @@ export class Pages {
           </div>
         </div>
       `,
-      notFound: `
+      notFound: /*html*/ `
         <div class="page page-not-found">
           <h1>404 - Page Not Found</h1>
           <p>The page you're looking for doesn't exist.</p>
